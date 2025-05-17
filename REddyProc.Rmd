@@ -81,6 +81,12 @@ base <- amf_read_base(file = floc,
                       parse_timestamp = TRUE) 
 
 # check data coverage for meteorology
+# visualizes the BASE data availability for selected AmeriFlux sites, variables, and years.
+#PPFD_IN	Photosynthetic photon flux density, incoming	µmolPhoton m-2 s-1
+#TA	Air temperature	deg C
+#RH	Relative humidity, range 0-100	%
+#VPD	Vapor Pressure Deficit	hPa
+#more variable names: https://ameriflux.lbl.gov/data/aboutdata/data-variables/#base
 amf_plot_datayear(site_set = site_name, 
                   var_set = c("PPFD_IN", "TA", "RH", "VPD"),
                   # year_set = c(2004:2023),
@@ -108,6 +114,7 @@ different sites;
 # subset data for two years
 base = base[base$YEAR %in% c(2011,2012), ]
 # modify time variables
+# SP: would be good to explain what the code does here
 base$TIMESTAMP=substr(base$TIMESTAMP_START,1,12)
 base$year=as.character(substr(base$TIMESTAMP_START,1,4))
 base$month=as.character(substr(base$TIMESTAMP_START,5,6))
@@ -117,7 +124,7 @@ base$date=as.Date(with(base, paste(year, month, day, sep="-")), "%Y-%m-%d")
 base$doy=yday(base$date)
 base$min= as.character(substr(base$TIMESTAMP,11,12))
 
-# organise the data to be used as input for REddyProc
+# format the data to be used as input for REddyProc
 base_df = data.frame('Year' = base$year, 'Day' = base$day, 'Hour' = base$hour, 'Date' = as.Date(base$date),
                       'Min' = base$min,  'Month' = base$month, 'DoY' = base$doy,
                       'NEE' = base$FC_1_1_1, 'LE' = base$LE_1_1_1, 'H' = base$H_1_1_1, # flux data
@@ -134,13 +141,18 @@ head(base_df)
 # 03: intialize EProc
 ```{r}
 ?filterLongRuns
+#filterLongRuns : Longer runs, i.e. sequences of numerically identical values, in a series of measurements hint to problems during a noisy measurement, e.g. by sensor malfunction due to freezing. This function, replaces such values in such runs with NA to indicate missing values.
+
 EddyData <- filterLongRuns(base_df, "NEE")
 EddyData$Year <- as.numeric(EddyData$Year)
 EddyData$Hour <- as.numeric(EddyData$Hour)
 EddyData$DoY <- as.numeric(EddyData$DoY)
 EddyDataWithPosix <- fConvertTimeToPosix(EddyData, 'YDH', Year = 'Year', Day = 'DoY', Hour  = 'Hour') 
+
 head(EddyDataWithPosix$DateTime)
-EProc <- sEddyProc$new(site_name, EddyDataWithPosix, c('NEE','Rg','Tair','VPD', 'Ustar', "H", "LE")) 
+EProc <- sEddyProc$new(site_name, EddyDataWithPosix, c('NEE','Rg','Tair','VPD', 'Ustar', "H", "LE"))
+#SP: I don't understand this, is EProc an object with the attributes we defined (NEE, Rg, Tair etc.) ?
+#would be good to mention that
 class(EProc)
 ```
 
@@ -228,19 +240,19 @@ EProc$sDATA$NEE <- EddieC$NEE_filt2
 
 # 05: u\* filtering
 -   u\*: Friction velocity (m/s) is a measure of turbulent mixing in the
-    atmosphere;
--   u\* is defined as a function of the fluctuations of horizontal and
-    vertical wind speeds (Yujie: I am not sure if this is accurate
-    definition)
+    lower atmosphere near the surface
+-   It can be thought of as a velocity scale, a representative value for a 'turbulent velocity'
+-   u\* is defined using the vertical flux of horizontal momentum
+-   (u\*)\^2 = overbar(u'w')\^2 + overbar(v'w')\^2
 -   CO2 transport is heavily influenced by turbulent mixing.
+-   Unfavorable conditions could be detected by inspecting the relationship of nighttime NEE vs. u\*.
 
-u\* filtering: - Unfavorable conditions could be detected by inspecting
-the relationship of nighttime NEE vs. u\*.
+Why is u\* filtering needed? 
 
-Why u\* filtering is needed? - To filter out period with low turbulence,
-e.g., at night, when winds are calm, the atmosphere often becomes stable
-with low turbulence; - EC towers may underestimate respiration fluxes as
-CO2 is not being transported upward efficiently to be measured.
+- To filter out period with low turbulence
+- For e.g., at night when winds are calm, the atmosphere often becomes stable with low turbulence and low mixing locally.
+  - This could lead to CO2 pooling near the surface or within canopies.
+- EC towers may underestimate respiration fluxes as CO2 is not being transported upward efficiently to be measured. 
 
 Different treatments of u\* thresholds; - At low u\* values, a
 negatively biased respiration is measured; - u\* threshold is the
@@ -340,6 +352,8 @@ Question: What is the difference between FCO2 and NEE?:
 FilledEddyData <- EProc$sExportResults()
 combined.df <- cbind(EddyData, FilledEddyData)
 names(combined.df)
+
+#Have a look at the gapfilled data
 
 # plot diurnal pattern of FC
 ggplot(combined.df, aes(x = Hour, y = NEE_50._f)) +
